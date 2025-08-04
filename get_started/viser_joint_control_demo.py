@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import rootutils
+
 rootutils.setup_root(__file__, pythonpath=True)
 
 import torch
-
-from get_started.viser_util import ViserVisualizer
-from metasim.cfg.objects import PrimitiveCubeCfg, PrimitiveSphereCfg, PrimitiveCylinderCfg, RigidObjCfg
-from metasim.cfg.scenario import ScenarioCfg
-from metasim.cfg.sensors import PinholeCameraCfg
-from metasim.constants import PhysicStateType
 from loguru import logger as log
 from rich.logging import RichHandler
 
+from get_started.viser_util import ViserVisualizer
+from metasim.cfg.objects import PrimitiveCubeCfg, PrimitiveCylinderCfg, PrimitiveSphereCfg, RigidObjCfg
+from metasim.cfg.scenario import ScenarioCfg
+from metasim.constants import PhysicStateType
+
 log.configure(handlers=[{"sink": RichHandler(), "format": "{message}"}])
+
 
 def extract_states_from_init(init_states, key):
     """
@@ -29,26 +30,31 @@ def extract_states_from_init(init_states, key):
             for name, item in state[key].items():
                 state_dict = {}
                 if "pos" in item and item["pos"] is not None:
-                    state_dict["pos"] = item["pos"].cpu().numpy().tolist() if hasattr(item["pos"], "cpu") else list(item["pos"])
+                    state_dict["pos"] = (
+                        item["pos"].cpu().numpy().tolist() if hasattr(item["pos"], "cpu") else list(item["pos"])
+                    )
                 if "rot" in item and item["rot"] is not None:
-                    state_dict["rot"] = item["rot"].cpu().numpy().tolist() if hasattr(item["rot"], "cpu") else list(item["rot"])
+                    state_dict["rot"] = (
+                        item["rot"].cpu().numpy().tolist() if hasattr(item["rot"], "cpu") else list(item["rot"])
+                    )
                 if "dof_pos" in item and item["dof_pos"] is not None:
                     state_dict["dof_pos"] = item["dof_pos"]
                 result[name] = state_dict
     return result
-    
+
+
 def main():
     """Demo robot joint control functionality."""
-    
+
     # Create a simple scenario with a robot
     scenario = ScenarioCfg(
-        robots=["franka","h1"],  # You can try other robots like "ur5e", "kinova_gen3", etc.
+        robots=["franka", "h1"],  # You can try other robots like "ur5e", "kinova_gen3", etc.
         try_add_table=True,  # Add table for context
         sim="isaaclab",  # or your preferred simulator
-        headless=True,   # Run headless since we're only using viser
+        headless=True,  # Run headless since we're only using viser
         num_envs=1,
     )
-    
+
     # Add some objects for visualization context
     scenario.objects = [
         PrimitiveCubeCfg(
@@ -58,7 +64,7 @@ def main():
             physics=PhysicStateType.RIGIDBODY,
         ),
         PrimitiveSphereCfg(
-            name="sphere", 
+            name="sphere",
             radius=0.1,
             color=[0.0, 0.0, 1.0],
             physics=PhysicStateType.RIGIDBODY,
@@ -79,7 +85,7 @@ def main():
             mjcf_path="get_started/example_assets/bbq_sauce/mjcf/bbq_sauce.xml",
         ),
     ]
-    
+
     # Initialize visualizer
     visualizer = ViserVisualizer(port=8080)
     visualizer.add_grid()
@@ -155,19 +161,19 @@ def main():
 
     visualizer.visualize_scenario_items(scenario.objects, default_object_states)
     visualizer.visualize_scenario_items(scenario.robots, default_robot_states)
-    
+
     # Enable camera controls
     visualizer.enable_camera_controls(
         initial_position=[3, 3, 1.0],
         render_width=512,
         render_height=512,
         look_at_position=[0, 0, 0.5],  # Look at robot level
-        initial_fov=50.0
+        initial_fov=50.0,
     )
-    
+
     # Enable joint control
     visualizer.enable_joint_control()
-    
+
     log.info("Viser server started at http://localhost:8080")
     log.info("Robot Joint Control Demo Usage:")
     log.info("1. Open 'Joint Control' panel in the GUI")
@@ -176,7 +182,7 @@ def main():
     log.info("4. Use individual joint sliders to control robot pose")
     log.info("5. Click 'Reset Joints' to return to initial position")
     log.info("6. Click 'Clear Joint Control' to remove GUI panels")
-    
+
     # import time
     # time.sleep(2)  # Wait for GUI to load
 
@@ -191,13 +197,14 @@ def main():
     }
     visualizer.update_robot_joint_config("franka", example_config)
     log.info("Applied example joint configuration")
-    
+
     try:
         while True:
             pass
-        
+
     except KeyboardInterrupt:
         log.info("Shutting down...")
+
 
 if __name__ == "__main__":
     main()

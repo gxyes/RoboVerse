@@ -9,9 +9,7 @@ try:
 except ImportError:
     pass
 
-import os
 
-import imageio
 import rootutils
 import torch
 import tyro
@@ -24,7 +22,12 @@ log.configure(handlers=[{"sink": RichHandler(), "format": "{message}"}])
 
 
 from get_started.utils import ObsSaver
-from metasim.cfg.objects import ArticulationObjCfg, PrimitiveCubeCfg, PrimitiveSphereCfg, PrimitiveCylinderCfg, RigidObjCfg
+from metasim.cfg.objects import (
+    PrimitiveCubeCfg,
+    PrimitiveCylinderCfg,
+    PrimitiveSphereCfg,
+    RigidObjCfg,
+)
 from metasim.cfg.scenario import ScenarioCfg
 from metasim.cfg.sensors import PinholeCameraCfg
 from metasim.constants import PhysicStateType, SimType
@@ -155,6 +158,7 @@ obs, extras = env.reset(states=init_states)
 # ========================================================================
 from get_started.viser_util import ViserVisualizer
 
+
 def extract_states_from_init(obs, handler, key):
     """
     obs: TensorState
@@ -170,13 +174,18 @@ def extract_states_from_init(obs, handler, key):
             for name, item in state[key].items():
                 state_dict = {}
                 if "pos" in item and item["pos"] is not None:
-                    state_dict["pos"] = item["pos"].cpu().numpy().tolist() if hasattr(item["pos"], "cpu") else list(item["pos"])
+                    state_dict["pos"] = (
+                        item["pos"].cpu().numpy().tolist() if hasattr(item["pos"], "cpu") else list(item["pos"])
+                    )
                 if "rot" in item and item["rot"] is not None:
-                    state_dict["rot"] = item["rot"].cpu().numpy().tolist() if hasattr(item["rot"], "cpu") else list(item["rot"])
+                    state_dict["rot"] = (
+                        item["rot"].cpu().numpy().tolist() if hasattr(item["rot"], "cpu") else list(item["rot"])
+                    )
                 if "dof_pos" in item and item["dof_pos"] is not None:
                     state_dict["dof_pos"] = item["dof_pos"]
                 result[name] = state_dict
     return result
+
 
 # initialize the viser server
 visualizer = ViserVisualizer(port=8080)
@@ -206,14 +215,14 @@ for robot in scenario.robots:
 # print for debugging
 log.info("\n".join(scene_info))
 
-# Enable camera controls 
+# Enable camera controls
 # The camera can be controlled via the GUI sliders and can be manually dragged
 visualizer.enable_camera_controls(
     initial_position=[1.5, -1.5, 1.5],
     render_width=1024,
     render_height=1024,
     look_at_position=[0, 0, 0],
-    initial_fov=71.28
+    initial_fov=71.28,
 )
 
 step = 0
@@ -270,7 +279,7 @@ for step in range(200):
 
     object_states = extract_states_from_init(obs, env.handler, "objects")
     robot_states = extract_states_from_init(obs, env.handler, "robots")
-    
+
     # import pdb; pdb.set_trace()
     for name, state in object_states.items():
         visualizer.update_item_pose(name, state)
