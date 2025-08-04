@@ -1,3 +1,7 @@
+"""Utils for get_started scripts using viser."""
+
+from __future__ import annotations
+
 import logging
 import os
 import tempfile
@@ -6,7 +10,6 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import MISSING
 from pathlib import Path
-from typing import Optional, Union
 
 import numpy as np
 import viser
@@ -106,7 +109,7 @@ class ViserVisualizer:
         self._joint_folders = {}  # robot_name -> GUI folder handle
         self._current_joint_positions = {}  # robot_name -> current joint positions (persistent)
 
-    def add_urdf(self, name: str, urdf_path: str, scale: float = 1.0, root_node_name: Optional[str] = None):
+    def add_urdf(self, name: str, urdf_path: str, scale: float = 1.0, root_node_name: str | None = None):
         try:
             from viser.extras import ViserUrdf
 
@@ -138,7 +141,7 @@ class ViserVisualizer:
     def add_grid(self):
         return self.server.scene.add_grid("/grid")
 
-    def visualize_scenario_items(self, items: Union[list, dict], item_states: Optional[dict] = None):
+    def visualize_scenario_items(self, items: list | dict, item_states: dict | None = None):
         if item_states is None:
             item_states = {}
         if isinstance(items, list):
@@ -151,15 +154,18 @@ class ViserVisualizer:
                 item_state = item_states.get(item_name, {})
                 self.visualize_item(item_cfg, item_name, item_state)
         else:
-            logger.warning(f"Unsupported objects type {type(objects)}")
+            logger.warning(f"Unsupported objects type {type(items)}")
 
     def visualize_item(
         self,
-        cfg: Union[
-            PrimitiveCubeCfg, PrimitiveSphereCfg, PrimitiveCylinderCfg, RigidObjCfg, ArticulationObjCfg, BaseRobotCfg
-        ],
+        cfg: PrimitiveCubeCfg
+        | PrimitiveSphereCfg
+        | PrimitiveCylinderCfg
+        | RigidObjCfg
+        | ArticulationObjCfg
+        | BaseRobotCfg,
         name: str,
-        state: Optional[dict] = None,
+        state: dict | None = None,
         base_offset_debug: bool = True,
     ):
         # Debug: print out the states for debugging
@@ -251,9 +257,9 @@ class ViserVisualizer:
                         -base_offset[1] * scale[1],
                         -base_offset[2] * scale[2],
                     )
-                print("add_frame:", f"/{name}_frame")
+                logger.debug(f"add_frame: /{name}_frame")
                 parent_frame = self.add_frame(f"/{name}_frame", show_axes=False)
-                print("self._frame_handles now:", self._frame_handles.keys())
+                logger.debug(f"self._frame_handles now: {list(self._frame_handles.keys())}")
                 if rotation is not None:
                     parent_frame.wxyz = rotation
                 urdf_handle = self.add_urdf(name, patched_urdf_path, scale=scale, root_node_name=f"/{name}_frame")
@@ -450,7 +456,7 @@ class ViserVisualizer:
         )
         return True
 
-    def load_and_set_trajectory(self, trajectory_path: str, robot_name: str = None, demo_index: int = 0):
+    def load_and_set_trajectory(self, trajectory_path: str, robot_name: str | None = None, demo_index: int = 0):
         """
         Load trajectory file and optionally set current trajectory.
 
@@ -639,7 +645,7 @@ class ViserVisualizer:
                 value = max(lower, min(upper, value))
                 sliders[i].value = float(value)
 
-    def clear_joint_control(self, robot_name: str = None):
+    def clear_joint_control(self, robot_name: str | None = None):
         """
         Clear joint control sliders for a specific robot or all robots.
         This only clears GUI elements but preserves joint positions.
