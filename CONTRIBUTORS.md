@@ -33,6 +33,7 @@ Guidelines for modifications:
 * Ran Gong
 * Siheng Zhao
 * Songlin Wei
+* Xinying Guo
 * Yikai Tang
 * Yuran Wang
 * Yutong Liang
