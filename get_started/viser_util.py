@@ -12,6 +12,7 @@ from dataclasses import MISSING
 from pathlib import Path
 
 import numpy as np
+import torch
 import viser
 
 from metasim.cfg.objects import (
@@ -108,6 +109,17 @@ class ViserVisualizer:
         self._initial_configs = {}  # robot_name -> initial joint config
         self._joint_folders = {}  # robot_name -> GUI folder handle
         self._current_joint_positions = {}  # robot_name -> current joint positions (persistent)
+
+        # IK control
+        self._robot_ik_solvers = {}  # robot_name -> curobo IK solver
+        self._robot_configs = {}  # robot_name -> robot config
+        self._ik_target_positions = {}  # robot_name -> [x, y, z] target position
+        self._ik_target_orientations = {}  # robot_name -> [w, x, y, z] target orientation
+        self._ik_sliders = {}  # robot_name -> dict of IK control sliders
+        self._ik_folders = {}  # robot_name -> IK GUI folder handle
+        self._ik_target_markers = {}  # robot_name -> target visualization marker
+        self._ik_orientation_frames = {}  # robot_name -> orientation visualization frame
+        self._env_handler = None  # reference to environment handler for getting current states
 
     def add_urdf(self, name: str, urdf_path: str, scale: float = 1.0, root_node_name: str | None = None):
         try:
@@ -522,6 +534,18 @@ class ViserVisualizer:
             self._current_joint_positions[robot_name]
         ) == len(joint_limits)
 
+        def make_update_callback(robot_name, slider_list):
+            def update_callback(_):
+                if self._urdf_handles.get(robot_name):
+                    joint_values = np.array([s.value for s in slider_list])
+                    self._urdf_handles[robot_name].update_cfg(joint_values)
+                    # Save current joint positions for persistence
+                    self._current_joint_positions[robot_name] = joint_values.tolist()
+                    # Refresh camera view if enabled
+                    self.refresh_camera_view()
+
+            return update_callback
+
         for i, (joint_name, (lower, upper)) in enumerate(joint_limits.items()):
             # Set reasonable defaults for joint limits
             lower = lower if lower is not None else -np.pi
@@ -543,19 +567,6 @@ class ViserVisualizer:
                 step=1e-3,
                 initial_value=float(initial_pos),
             )
-
-            # Store reference to update function
-            def make_update_callback(robot_name, slider_list):
-                def update_callback(_):
-                    if self._urdf_handles.get(robot_name):
-                        joint_values = np.array([s.value for s in slider_list])
-                        self._urdf_handles[robot_name].update_cfg(joint_values)
-                        # Save current joint positions for persistence
-                        self._current_joint_positions[robot_name] = joint_values.tolist()
-                        # Refresh camera view if enabled
-                        self.refresh_camera_view()
-
-                return update_callback
 
             slider_handles.append(slider)
             initial_config.append(initial_pos)
@@ -1908,6 +1919,519 @@ class ViserVisualizer:
 
             except Exception as e:
                 logger.error(f"Failed to setup joint controls: {e}")
+                import traceback
+
+                traceback.print_exc()
+
+    def setup_ik_solver(self, robot_name: str, robot_config, env_handler=None):
+        """
+        Setup IK solver for a specific robot.
+        
+        Args:
+            robot_name: Name of the robot
+            robot_config: Robot configuration object
+            env_handler: Environment handler for getting current states
+        """
+        try:
+            from metasim.utils.kinematics_utils import get_curobo_models
+            
+            # Get curobo models
+            *_, robot_ik = get_curobo_models(robot_config)
+            
+            # Store IK solver and config
+            self._robot_ik_solvers[robot_name] = robot_ik
+            self._robot_configs[robot_name] = robot_config
+            self._env_handler = env_handler
+            
+            # Initialize default target position (current end-effector position if possible)
+            self._ik_target_positions[robot_name] = [0.3, 0.0, 0.6]  # Default position
+            self._ik_target_orientations[robot_name] = [0.0, 1.0, 0.0, 0.0]  # Default orientation (w,x,y,z)
+            
+            logger.info(f"IK solver setup for robot {robot_name} with {len(robot_ik.robot_config.cspace.joint_names)} DOF")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to setup IK solver for {robot_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def solve_ik_for_target(self, robot_name: str, target_pos: list, target_quat: list = None):
+        """
+        Solve IK for target end-effector position and orientation.
+        
+        Args:
+            robot_name: Name of the robot
+            target_pos: Target position [x, y, z]
+            target_quat: Target quaternion [w, x, y, z] (optional)
+            
+        Returns:
+            Joint configuration if successful, None otherwise
+        """
+        if robot_name not in self._robot_ik_solvers:
+            logger.error(f"No IK solver found for robot {robot_name}")
+            return None
+            
+        try:
+            from curobo.types.math import Pose
+            
+            robot_ik = self._robot_ik_solvers[robot_name]
+            robot_config = self._robot_configs[robot_name]
+            
+            # Use default orientation if not provided
+            if target_quat is None:
+                target_quat = self._ik_target_orientations[robot_name]
+                
+            # Ensure CUDA synchronization to avoid stream conflicts
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                
+            # Convert to torch tensors with proper device handling
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            ee_pos_target = torch.tensor([target_pos], dtype=torch.float32, device=device)
+            ee_quat_target = torch.tensor([target_quat], dtype=torch.float32, device=device)
+            
+            # Get current joint configuration as seed
+            seed_config = None
+            if self._env_handler is not None:
+                try:
+                    states = self._env_handler.get_states()
+                    if hasattr(states.robots[robot_name], 'joint_pos'):
+                        curr_robot_q = states.robots[robot_name].joint_pos
+                        if hasattr(curr_robot_q, 'cuda'):
+                            curr_robot_q = curr_robot_q.cuda()
+                        else:
+                            curr_robot_q = curr_robot_q.to(device)
+                        curobo_n_dof = len(robot_ik.robot_config.cspace.joint_names)
+                        seed_config = curr_robot_q[:1, :curobo_n_dof].unsqueeze(1).tile([1, robot_ik._num_seeds, 1])
+                except Exception as e:
+                    logger.warning(f"Could not get current joint config for seed: {e}")
+            
+            # Create a default seed if none available
+            if seed_config is None:
+                curobo_n_dof = len(robot_ik.robot_config.cspace.joint_names)
+                seed_config = torch.zeros((1, robot_ik._num_seeds, curobo_n_dof), device=device)
+            
+            # Solve IK with error handling
+            if torch.cuda.is_available():
+                with torch.cuda.device(device):
+                    result = robot_ik.solve_batch(Pose(ee_pos_target, ee_quat_target), seed_config=seed_config)
+            else:
+                result = robot_ik.solve_batch(Pose(ee_pos_target, ee_quat_target), seed_config=seed_config)
+            
+            if result.success[0, 0]:
+                # Convert to joint configuration
+                curobo_n_dof = len(robot_ik.robot_config.cspace.joint_names)
+                ee_n_dof = len(robot_config.gripper_open_q)
+                
+                q = torch.zeros((1, robot_config.num_joints), device=device)
+                q[0, :curobo_n_dof] = result.solution[0, 0].clone()
+                q[0, -ee_n_dof:] = 0.04  # Set gripper to open position
+                
+                # Convert to dict format
+                joint_config = dict(zip(robot_config.actuators.keys(), q[0].cpu().tolist()))
+                
+                logger.info(f"IK solved successfully for {robot_name}")
+                return joint_config
+            else:
+                logger.warning(f"IK failed to find solution for {robot_name}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error solving IK for {robot_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def update_robot_from_ik(self, robot_name: str, target_pos: list, target_quat: list = None):
+        """
+        Update robot configuration using IK solution.
+        
+        Args:
+            robot_name: Name of the robot
+            target_pos: Target position [x, y, z]
+            target_quat: Target quaternion [w, x, y, z] (optional)
+        """
+        joint_config = self.solve_ik_for_target(robot_name, target_pos, target_quat)
+        if joint_config is not None:
+            # Update robot using joint configuration
+            if robot_name in self._urdf_handles:
+                urdf_handle = self._urdf_handles[robot_name]
+                joint_names = urdf_handle.get_actuated_joint_names()
+                dof_pos_list = [joint_config.get(jn, 0.0) for jn in joint_names]
+                urdf_handle.update_cfg(np.array(dof_pos_list, dtype=np.float32))
+                
+                # Update joint sliders if they exist
+                if robot_name in self._joint_sliders:
+                    for i, joint_name in enumerate(joint_names):
+                        if i < len(self._joint_sliders[robot_name]) and joint_name in joint_config:
+                            self._joint_sliders[robot_name][i].value = float(joint_config[joint_name])
+                            
+                # Store current positions
+                self._current_joint_positions[robot_name] = dof_pos_list
+                
+                # Refresh camera view
+                self.refresh_camera_view()
+                
+                logger.debug(f"Updated robot {robot_name} with IK solution")
+                return True
+            else:
+                logger.warning(f"Robot {robot_name} not found in URDF handles")
+                return False
+        return False
+
+    def add_ik_target_marker(self, robot_name: str, position: list, orientation: list = None, color=(1.0, 0.0, 0.0)):
+        """
+        Add or update a visual marker for IK target position and orientation.
+        
+        Args:
+            robot_name: Name of the robot
+            position: Target position [x, y, z]
+            orientation: Target orientation [w, x, y, z] (optional)
+            color: RGB color (default: red)
+        """
+        try:
+            marker_name = f"/ik_target_{robot_name}"
+            frame_name = f"/ik_frame_{robot_name}"
+            
+            # Remove existing markers if they exist
+            if robot_name in self._ik_target_markers:
+                try:
+                    self._ik_target_markers[robot_name].remove()
+                except:
+                    pass
+            
+            if robot_name in self._ik_orientation_frames:
+                try:
+                    self._ik_orientation_frames[robot_name].remove()
+                except:
+                    pass
+            
+            # Create new marker (a small sphere)
+            marker = self.server.scene.add_icosphere(
+                name=marker_name,
+                radius=0.03,
+                color=color,
+                position=np.array(position, dtype=np.float32),
+            )
+            
+            # Create orientation frame to show rotation
+            if orientation is None:
+                orientation = self._ik_target_orientations.get(robot_name, [0.0, 1.0, 0.0, 0.0])
+            
+            frame = self.server.scene.add_frame(
+                name=frame_name,
+                show_axes=True,
+                axes_length=0.1,
+                axes_radius=0.005,
+            )
+            frame.position = np.array(position, dtype=np.float32)
+            frame.wxyz = np.array(orientation, dtype=np.float32)
+            
+            self._ik_target_markers[robot_name] = marker
+            self._ik_orientation_frames[robot_name] = frame
+            logger.debug(f"Added IK target marker and orientation frame for {robot_name} at {position}")
+            
+        except Exception as e:
+            logger.error(f"Failed to add IK target marker: {e}")
+
+    def update_ik_target_marker(self, robot_name: str, position: list, orientation: list = None):
+        """
+        Update the position and orientation of IK target marker.
+        
+        Args:
+            robot_name: Name of the robot
+            position: New target position [x, y, z]
+            orientation: New target orientation [w, x, y, z] (optional)
+        """
+        try:
+            # Update position
+            if robot_name in self._ik_target_markers:
+                self._ik_target_markers[robot_name].position = np.array(position, dtype=np.float32)
+                
+                # Update orientation frame position
+                if robot_name in self._ik_orientation_frames:
+                    self._ik_orientation_frames[robot_name].position = np.array(position, dtype=np.float32)
+                    
+                    # Update orientation if provided
+                    if orientation is not None:
+                        self._ik_orientation_frames[robot_name].wxyz = np.array(orientation, dtype=np.float32)
+                        
+                logger.debug(f"Updated IK target marker for {robot_name} to {position}")
+            else:
+                # Create marker if it doesn't exist
+                self.add_ik_target_marker(robot_name, position, orientation)
+        except Exception as e:
+            logger.error(f"Failed to update IK target marker: {e}")
+
+    def remove_ik_target_marker(self, robot_name: str):
+        """
+        Remove IK target marker and orientation frame for a robot.
+        
+        Args:
+            robot_name: Name of the robot
+        """
+        try:
+            if robot_name in self._ik_target_markers:
+                self._ik_target_markers[robot_name].remove()
+                del self._ik_target_markers[robot_name]
+                
+            if robot_name in self._ik_orientation_frames:
+                self._ik_orientation_frames[robot_name].remove()
+                del self._ik_orientation_frames[robot_name]
+                
+            logger.debug(f"Removed IK target marker and orientation frame for {robot_name}")
+        except Exception as e:
+            logger.error(f"Failed to remove IK target marker: {e}")
+
+    def enable_ik_control(self):
+        """Enable IK control for all connected clients."""
+
+        @self.server.on_client_connect
+        def setup_ik_controls(client):
+            """Setup IK control for each connected client."""
+            try:
+                # Add IK control for robots
+                with client.gui.add_folder("IK Control"):
+                    ik_status = client.gui.add_text("IK Status", initial_value="No robot IK available")
+                    robot_select_ik = client.gui.add_dropdown(
+                        "Control Robot", options=["No robots loaded"], initial_value="No robots loaded"
+                    )
+                    setup_ik_control_btn = client.gui.add_button("Setup IK Control")
+                    clear_ik_control_btn = client.gui.add_button("Clear IK Control")
+
+                # IK control state variables
+                current_ik_robot = None
+
+                # IK control functions
+                def update_robot_list_for_ik():
+                    """Update robot dropdown for IK control."""
+                    available_robots = []
+                    for robot_name, robot_config in self._robot_configs.items():
+                        if robot_name in self._urdf_handles and self._urdf_handles[robot_name] is not None:
+                            available_robots.append(robot_name)
+
+                    if available_robots:
+                        robot_select_ik.options = available_robots
+                        robot_select_ik.value = available_robots[0]
+                        ik_status.value = f"Found {len(available_robots)} robot(s) available for IK control"
+                    else:
+                        robot_select_ik.options = ["No robots loaded"]
+                        robot_select_ik.value = "No robots loaded"
+                        ik_status.value = "No robots available for IK control"
+
+                def setup_ik_control_gui():
+                    """Setup IK control sliders for selected robot."""
+                    nonlocal current_ik_robot
+
+                    if not robot_select_ik.value or robot_select_ik.value == "No robots loaded":
+                        ik_status.value = "No robot selected"
+                        return
+
+                    selected_robot = robot_select_ik.value
+
+                    # Check if IK control already exists for this robot
+                    if selected_robot in self._ik_sliders and len(self._ik_sliders[selected_robot]) > 0:
+                        ik_status.value = f"IK control already exists for {selected_robot}"
+                        current_ik_robot = selected_robot
+                        return
+
+                    # Check if robot has IK solver
+                    if selected_robot not in self._robot_ik_solvers:
+                        ik_status.value = f"No IK solver found for {selected_robot}. Please setup IK solver first."
+                        return
+
+                    # Create IK control sliders for the selected robot
+                    try:
+                        ik_folder = client.gui.add_folder(f"IK Control - {selected_robot}")
+                        self._ik_folders[selected_robot] = ik_folder
+
+                        # Add initial target marker with orientation
+                        initial_target_pos = self._ik_target_positions[selected_robot]
+                        initial_target_orient = self._ik_target_orientations[selected_robot]
+                        self.add_ik_target_marker(selected_robot, initial_target_pos, initial_target_orient, color=(1.0, 0.0, 0.0))
+
+                        with ik_folder:
+                            # Target position controls
+                            with client.gui.add_folder("Target Position"):
+                                target_pos = self._ik_target_positions[selected_robot]
+                                pos_x_slider = client.gui.add_slider(
+                                    "Target X", min=-1.0, max=1.0, step=0.01, initial_value=target_pos[0]
+                                )
+                                pos_y_slider = client.gui.add_slider(
+                                    "Target Y", min=-1.0, max=1.0, step=0.01, initial_value=target_pos[1]
+                                )
+                                pos_z_slider = client.gui.add_slider(
+                                    "Target Z", min=0.1, max=1.5, step=0.01, initial_value=target_pos[2]
+                                )
+
+                            # Target orientation controls
+                            with client.gui.add_folder("Target Orientation"):
+                                target_quat = self._ik_target_orientations[selected_robot]
+                                quat_w_slider = client.gui.add_slider(
+                                    "Quat W", min=-1.0, max=1.0, step=0.01, initial_value=target_quat[0]
+                                )
+                                quat_x_slider = client.gui.add_slider(
+                                    "Quat X", min=-1.0, max=1.0, step=0.01, initial_value=target_quat[1]
+                                )
+                                quat_y_slider = client.gui.add_slider(
+                                    "Quat Y", min=-1.0, max=1.0, step=0.01, initial_value=target_quat[2]
+                                )
+                                quat_z_slider = client.gui.add_slider(
+                                    "Quat Z", min=-1.0, max=1.0, step=0.01, initial_value=target_quat[3]
+                                )
+
+                            # Control buttons
+                            solve_ik_btn = client.gui.add_button("Solve & Apply IK")
+                            reset_target_btn = client.gui.add_button("Reset Target")
+                            
+                            # Status display
+                            ik_solve_status = client.gui.add_text("IK Solve Status", initial_value="Ready")
+
+                            # Store slider references
+                            self._ik_sliders[selected_robot] = {
+                                'pos_x': pos_x_slider,
+                                'pos_y': pos_y_slider,
+                                'pos_z': pos_z_slider,
+                                'quat_w': quat_w_slider,
+                                'quat_x': quat_x_slider,
+                                'quat_y': quat_y_slider,
+                                'quat_z': quat_z_slider,
+                                'status': ik_solve_status
+                            }
+
+                            # Setup callbacks
+                            def update_target_marker():
+                                """Update target marker position and orientation when sliders change."""
+                                target_pos = [pos_x_slider.value, pos_y_slider.value, pos_z_slider.value]
+                                target_quat = [quat_w_slider.value, quat_x_slider.value, quat_y_slider.value, quat_z_slider.value]
+                                
+                                # Normalize quaternion
+                                import math
+                                quat_norm = math.sqrt(sum(q*q for q in target_quat))
+                                if quat_norm > 1e-6:
+                                    target_quat = [q/quat_norm for q in target_quat]
+                                else:
+                                    target_quat = [1.0, 0.0, 0.0, 0.0]
+                                    
+                                self.update_ik_target_marker(selected_robot, target_pos, target_quat)
+
+                            def solve_and_apply_ik():
+                                """Solve IK and apply to robot."""
+                                try:
+                                    target_pos = [pos_x_slider.value, pos_y_slider.value, pos_z_slider.value]
+                                    target_quat = [quat_w_slider.value, quat_x_slider.value, quat_y_slider.value, quat_z_slider.value]
+                                    
+                                    # Normalize quaternion
+                                    import math
+                                    quat_norm = math.sqrt(sum(q*q for q in target_quat))
+                                    if quat_norm > 1e-6:
+                                        target_quat = [q/quat_norm for q in target_quat]
+                                    else:
+                                        target_quat = [1.0, 0.0, 0.0, 0.0]
+                                    
+                                    ik_solve_status.value = "Solving IK..."
+                                    logger.info(f"Starting IK solve for {selected_robot}, target: {target_pos}, quat: {target_quat}")
+                                    
+                                    success = self.update_robot_from_ik(selected_robot, target_pos, target_quat)
+                                    
+                                    if success:
+                                        ik_solve_status.value = f"IK solved! Target: ({target_pos[0]:.3f}, {target_pos[1]:.3f}, {target_pos[2]:.3f})"
+                                        # Update stored target
+                                        self._ik_target_positions[selected_robot] = target_pos
+                                        self._ik_target_orientations[selected_robot] = target_quat
+                                        logger.info(f"IK solve succeeded for {selected_robot}")
+                                    else:
+                                        ik_solve_status.value = "IK failed to find solution"
+                                        logger.warning(f"IK solve failed for {selected_robot}")
+                                        
+                                except Exception as e:
+                                    ik_solve_status.value = f"Error: {e}"
+                                    logger.error(f"Error in solve_and_apply_ik: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+
+                            def reset_target():
+                                """Reset target to default values."""
+                                default_pos = [0.3, 0.0, 0.6]
+                                default_quat = [0.0, 1.0, 0.0, 0.0]
+                                
+                                pos_x_slider.value = default_pos[0]
+                                pos_y_slider.value = default_pos[1]
+                                pos_z_slider.value = default_pos[2]
+                                quat_w_slider.value = default_quat[0]
+                                quat_x_slider.value = default_quat[1]
+                                quat_y_slider.value = default_quat[2]
+                                quat_z_slider.value = default_quat[3]
+                                
+                                # Update marker to default position and orientation
+                                self.update_ik_target_marker(selected_robot, default_pos, default_quat)
+                                
+                                ik_solve_status.value = "Target reset to default"
+
+                            # Connect callbacks
+                            solve_ik_btn.on_click(lambda _: solve_and_apply_ik())
+                            reset_target_btn.on_click(lambda _: reset_target())
+                            
+                            # Connect position and orientation sliders to update marker in real-time
+                            pos_x_slider.on_update(lambda _: update_target_marker())
+                            pos_y_slider.on_update(lambda _: update_target_marker())
+                            pos_z_slider.on_update(lambda _: update_target_marker())
+                            quat_w_slider.on_update(lambda _: update_target_marker())
+                            quat_x_slider.on_update(lambda _: update_target_marker())
+                            quat_y_slider.on_update(lambda _: update_target_marker())
+                            quat_z_slider.on_update(lambda _: update_target_marker())
+
+                        current_ik_robot = selected_robot
+                        ik_status.value = f"Setup IK control for {selected_robot}"
+                        logger.info(f"Created IK control panel for {selected_robot}")
+
+                    except Exception as e:
+                        logger.error(f"Failed to create IK control folder: {e}")
+                        ik_status.value = f"Error creating IK control: {e}"
+
+                def clear_ik_control_gui():
+                    """Clear all IK control panels."""
+                    nonlocal current_ik_robot
+
+                    cleared_robots = []
+                    # Try to remove all IK folders
+                    for robot_name, folder in list(self._ik_folders.items()):
+                        try:
+                            if hasattr(folder, "remove"):
+                                folder.remove()
+                            cleared_robots.append(robot_name)
+                        except Exception as e:
+                            logger.warning(f"Could not remove IK folder for {robot_name}: {e}")
+
+                    # Clear GUI references and target markers
+                    for robot_name in cleared_robots:
+                        if robot_name in self._ik_folders:
+                            del self._ik_folders[robot_name]
+                        if robot_name in self._ik_sliders:
+                            del self._ik_sliders[robot_name]
+                        # Remove target marker
+                        self.remove_ik_target_marker(robot_name)
+
+                    current_ik_robot = None
+
+                    if cleared_robots:
+                        ik_status.value = f"Cleared IK control panels for: {', '.join(cleared_robots)}"
+                        logger.info(f"Cleared IK control panels for: {', '.join(cleared_robots)}")
+                    else:
+                        ik_status.value = "No IK control panels to clear"
+
+                # Connect IK control buttons
+                setup_ik_control_btn.on_click(lambda _: setup_ik_control_gui())
+                clear_ik_control_btn.on_click(lambda _: clear_ik_control_gui())
+
+                # Auto-update robot list for IK control when GUI loads
+                update_robot_list_for_ik()
+
+                logger.info(f"IK control enabled for client {client.client_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to setup IK controls: {e}")
                 import traceback
 
                 traceback.print_exc()
