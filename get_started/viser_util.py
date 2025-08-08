@@ -1959,7 +1959,12 @@ class ViserVisualizer:
             traceback.print_exc()
             return False
 
-    def solve_ik_for_target(self, robot_name: str, target_pos: list, target_quat: list = None):
+    def solve_ik_for_target(
+        self,
+        robot_name: str,
+        target_pos: list[float],
+        target_quat: list[float] | None = None,
+    ):
         """
         Solve IK for target end-effector position and orientation.
 
@@ -2047,7 +2052,12 @@ class ViserVisualizer:
             traceback.print_exc()
             return None
 
-    def update_robot_from_ik(self, robot_name: str, target_pos: list, target_quat: list = None):
+    def update_robot_from_ik(
+        self,
+        robot_name: str,
+        target_pos: list[float],
+        target_quat: list[float] | None = None,
+    ):
         """
         Update robot configuration using IK solution.
 
@@ -2084,7 +2094,13 @@ class ViserVisualizer:
                 return False
         return False
 
-    def add_ik_target_marker(self, robot_name: str, position: list, orientation: list = None, color=(1.0, 0.0, 0.0)):
+    def add_ik_target_marker(
+        self,
+        robot_name: str,
+        position: list[float],
+        orientation: list[float] | None = None,
+        color: tuple[float, float, float] = (1.0, 0.0, 0.0),
+    ):
         """
         Add or update a visual marker for IK target position and orientation.
 
@@ -2139,7 +2155,12 @@ class ViserVisualizer:
         except Exception as e:
             logger.error(f"Failed to add IK target marker: {e}")
 
-    def update_ik_target_marker(self, robot_name: str, position: list, orientation: list = None):
+    def update_ik_target_marker(
+        self,
+        robot_name: str,
+        position: list[float],
+        orientation: list[float] | None = None,
+    ):
         """
         Update the position and orientation of IK target marker.
 
