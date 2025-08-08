@@ -22,8 +22,6 @@ log.configure(handlers=[{"sink": RichHandler(), "format": "{message}"}])
 
 from metasim.cfg.objects import (
     PrimitiveCubeCfg,
-    PrimitiveCylinderCfg,
-    PrimitiveSphereCfg,
     RigidObjCfg,
 )
 from metasim.cfg.scenario import ScenarioCfg
@@ -179,7 +177,7 @@ def main():
     robot_config = scenario.robots[0]
     robot_name = robot_config.name
     success = visualizer.setup_ik_solver(robot_name, robot_config, env.handler)
-    
+
     if success:
         log.info(f"IK solver successfully setup for robot {robot_name}")
     else:
