@@ -6,6 +6,11 @@ import gymnasium as gym
 import torch
 from loguru import logger as log
 
+from metasim.queries.base import BaseQueryType
+from metasim.sim import BaseSimHandler
+from metasim.types import Action, DictEnvState
+from metasim.utils.dict import deep_get
+from metasim.utils.state import CameraState, ObjectState, RobotState, TensorState
 from scenario_cfg.objects import (
     ArticulationObjCfg,
     BaseArticulationObjCfg,
@@ -14,11 +19,6 @@ from scenario_cfg.objects import (
     PrimitiveFrameCfg,
 )
 from scenario_cfg.scenario import ScenarioCfg
-from metasim.queries.base import BaseQueryType
-from metasim.sim import BaseSimHandler
-from metasim.types import Action, DictEnvState
-from metasim.utils.dict import deep_get
-from metasim.utils.state import CameraState, ObjectState, RobotState, TensorState
 
 from .env_overwriter import IsaaclabEnvOverwriter
 from .isaaclab_helper import _update_tiled_camera_pose, get_pose
@@ -126,9 +126,6 @@ class IsaaclabHandler(BaseSimHandler):
         log.info(f"Render adaptiveSampling/enabled: {settings.get('/rtx/pathtracing/adaptiveSampling/enabled')}")
         log.info(f"Render maxBounces: {settings.get('/rtx/pathtracing/maxBounces')}")
 
-    ############################################################
-    ## Gymnasium main methods
-    ############################################################
     def step(self, action: list[Action] | torch.Tensor):
         self._actions_cache = action
 
