@@ -56,7 +56,6 @@ class DictEnvState(TypedDict):
     cameras: dict[str, dict[str, torch.Tensor]]
 
 
-
 @dataclass
 class ObjectState:
     """State of a single object."""

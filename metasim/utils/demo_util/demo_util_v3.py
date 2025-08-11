@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from scenario_cfg.robots.base_robot_cfg import BaseRobotCfg
 from metasim.types import Action, RobotAction
+from scenario_cfg.robots.base_robot_cfg import BaseRobotCfg
 
 
 def convert_state_v2_to_v3(state: dict, robot: BaseRobotCfg):

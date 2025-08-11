@@ -9,8 +9,7 @@ if TYPE_CHECKING:
     from scenario_cfg.scenario import ScenarioCfg
 
 from metasim.queries.base import BaseQueryType
-from metasim.types import DictEnvState, TensorState, Action
-
+from metasim.types import Action, DictEnvState, TensorState
 
 
 class BaseSimHandler(ABC):
@@ -70,7 +69,6 @@ class BaseSimHandler(ABC):
             actions (list[Action]): The target actions for the robot
         """
         raise NotImplementedError
-
 
     ############################################################
     ## Get states

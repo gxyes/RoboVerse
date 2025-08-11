@@ -9,8 +9,6 @@ from typing import Callable
 import numpy as np
 import torch
 
-from scenario_cfg.scenario import ScenarioCfg
-from scenario_cfg.tasks.skillblender.base_legged_cfg import BaseLeggedTaskCfg
 from metasim.utils.humanoid_robot_util import (
     contact_forces_tensor,
     dof_vel_tensor,
@@ -28,6 +26,8 @@ from roboverse_learn.skillblender_rl.utils import (
     get_joint_reindexed_indices_from_substring,
     torch_rand_float,
 )
+from scenario_cfg.scenario import ScenarioCfg
+from scenario_cfg.tasks.skillblender.base_legged_cfg import BaseLeggedTaskCfg
 
 
 class HumanoidBaseWrapper(RslRlWrapper):

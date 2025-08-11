@@ -7,10 +7,10 @@ import importlib
 import gymnasium as gym
 from loguru import logger as log
 
-from scenario_cfg.robots.base_robot_cfg import BaseRobotCfg
-from scenario_cfg.scenes import SceneCfg
 from metasim.constants import SimType
 from metasim.utils import is_camel_case, is_snake_case, to_camel_case, to_snake_case
+from scenario_cfg.robots.base_robot_cfg import BaseRobotCfg
+from scenario_cfg.scenes import SceneCfg
 
 
 def get_sim_handler_class(sim: SimType):
@@ -112,6 +112,7 @@ def get_sim_handler_class(sim: SimType):
             raise e
     else:
         raise ValueError(f"Invalid simulator type: {sim}")
+
 
 def register_task(task_id: str):
     """Register the task to the gym registry.
