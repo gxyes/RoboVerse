@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from scenario_cfg.scenario import ScenarioCfg
 from metasim.utils.humanoid_robot_util import (
     contact_forces_tensor,
     dof_pos_tensor,
@@ -12,6 +11,7 @@ from metasim.utils.humanoid_robot_util import (
     ref_dof_pos_tenosr,
 )
 from roboverse_learn.skillblender_rl.env_wrappers.base.base_humanoid_wrapper import HumanoidBaseWrapper
+from scenario_cfg.scenario import ScenarioCfg
 
 
 class WalkingWrapper(HumanoidBaseWrapper):
