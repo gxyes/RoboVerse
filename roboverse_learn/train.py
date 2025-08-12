@@ -39,10 +39,10 @@ def main():
 
     import torch
 
-    from scenario_cfg.cameras import PinholeCameraCfg
     from metasim.constants import SimType
     from metasim.utils.demo_util import get_traj
     from metasim.utils.setup_util import get_robot, get_sim_env_class, get_task
+    from scenario_cfg.cameras import PinholeCameraCfg
 
     task = get_task(args.task)
     robot = get_robot(args.robot)

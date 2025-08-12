@@ -7,10 +7,10 @@ import pickle as pkl
 import numpy as np
 import torch
 
+from metasim.sim import BaseSimHandler
 from scenario_cfg.objects import ArticulationObjCfg
 from scenario_cfg.robots.base_robot_cfg import BaseRobotCfg
 from scenario_cfg.tasks.base_task_cfg import BaseTaskCfg
-from metasim.sim import BaseSimHandler
 
 
 def get_traj_v1(task: BaseTaskCfg, robot: BaseRobotCfg, handler: BaseSimHandler):

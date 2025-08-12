@@ -1,5 +1,4 @@
-"""
-Go1-feet-only robot configuration for MuJoCo-Playground / MetaSim.
+"""Go1-feet-only robot configuration for MuJoCo-Playground / MetaSim.
 
 • 12 position actuators (3 per leg).
 • Default PID gains and force limits are copied verbatim from the XML:
