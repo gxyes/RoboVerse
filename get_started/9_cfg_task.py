@@ -21,10 +21,10 @@ log.configure(handlers=[{"sink": RichHandler(), "format": "{message}"}])
 
 import torch
 
-from metasim.utils import configclass
-from tasks.gym_registration import register_all_tasks_with_gym
 from get_started.utils import ObsSaver
+from metasim.utils import configclass
 from scenario_cfg.cameras import PinholeCameraCfg
+from tasks.gym_registration import register_all_tasks_with_gym
 
 
 @configclass
@@ -34,7 +34,9 @@ class Args:
     task: str = "obj_env"
     robot: str = "franka"
     ## Handlers
-    sim: Literal["isaacgym", "isaacsim", "isaaclab", "genesis", "pybullet", "sapien2", "sapien3", "mujoco", "mjx"] = "isaacgym"
+    sim: Literal["isaacgym", "isaacsim", "isaaclab", "genesis", "pybullet", "sapien2", "sapien3", "mujoco", "mjx"] = (
+        "isaacgym"
+    )
 
     ## Others
     num_envs: int = 1
@@ -55,14 +57,18 @@ SIM = args.sim
 register_all_tasks_with_gym()
 
 # Add camera for video recording if needed
-camera = PinholeCameraCfg(
-    name="main_camera",
-    pos=[4.0, 4.0, 3.0],
-    look_at=[0.0, 0.0, 1.0],
-    width=640,
-    height=480,
-    data_types=["rgb"],
-) if args.save_video else None
+camera = (
+    PinholeCameraCfg(
+        name="main_camera",
+        pos=[4.0, 4.0, 3.0],
+        look_at=[0.0, 0.0, 1.0],
+        width=640,
+        height=480,
+        data_types=["rgb"],
+    )
+    if args.save_video
+    else None
+)
 
 env_id = f"RoboVerse/{args.task}"
 env = gym.make_vec(
@@ -82,6 +88,7 @@ obs, info = env.reset()
 obs_saver = None
 if args.save_video:
     import os
+
     os.makedirs("get_started/output", exist_ok=True)
     video_path = f"get_started/output/9_cfg_task_{args.sim}.mp4"
     obs_saver = ObsSaver(video_path=video_path)
@@ -105,7 +112,7 @@ for step_i in range(100):
         for _ in range(args.num_envs)
     ]
     obs, reward, terminated, truncated, info = env.step(actions)
-    
+
     # Save observations for video
     if obs_saver is not None:
         try:
