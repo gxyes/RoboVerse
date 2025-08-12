@@ -26,10 +26,7 @@ from metasim.constants import PhysicStateType, SimType
 from metasim.utils import configclass
 from metasim.utils.setup_util import get_sim_handler_class
 from scenario_cfg.cameras import PinholeCameraCfg
-from scenario_cfg.lights import (
-    DistantLightCfg, CylinderLightCfg, DomeLightCfg, 
-    SphereLightCfg, DiskLightCfg
-)
+from scenario_cfg.lights import DiskLightCfg, DistantLightCfg, DomeLightCfg
 from scenario_cfg.objects import ArticulationObjCfg, PrimitiveCubeCfg, PrimitiveSphereCfg, RigidObjCfg
 from scenario_cfg.render import RenderCfg
 from scenario_cfg.scenario import ScenarioCfg
@@ -59,60 +56,58 @@ if __name__ == "__main__":
 
     # initialize scenario
     scenario = ScenarioCfg(robots=[args.robot], headless=args.headless, num_envs=args.num_envs, simulator=args.sim)
-    
+
     # Configure lighting based on preset
     if args.designed_lighting:
         log.info(f"Using designed lighting configuration with preset: {args.lighting_preset}")
-        
+
         if args.lighting_preset == "natural":
             # Natural outdoor lighting - combines dome light with directional sun
             scenario.lights = [
                 # Sky dome light - provides soft ambient lighting from all directions
                 DomeLightCfg(
-                    intensity=800.0,         # Moderate ambient lighting
+                    intensity=800.0,  # Moderate ambient lighting
                     color=(0.85, 0.9, 1.0),  # Slightly blue sky color
                 ),
-                
                 # Sun light - main directional light
                 DistantLightCfg(
-                    intensity=1200.0,       # Strong sunlight
-                    polar=35.0,             # Sun at 35° elevation (natural angle)
-                    azimuth=60.0,           # From the northeast
-                    color=(1.0, 0.98, 0.95), # Slightly warm sunlight
+                    intensity=1200.0,  # Strong sunlight
+                    polar=35.0,  # Sun at 35° elevation (natural angle)
+                    azimuth=60.0,  # From the northeast
+                    color=(1.0, 0.98, 0.95),  # Slightly warm sunlight
                 ),
-                
                 # Soft area light for subtle fill
                 DiskLightCfg(
                     intensity=300.0,
-                    radius=1.5,             # Large disk for soft light
-                    pos=(2.0, -2.0, 4.0),   # Side fill light
+                    radius=1.5,  # Large disk for soft light
+                    pos=(2.0, -2.0, 4.0),  # Side fill light
                     rot=(0.7071, 0.7071, 0.0, 0.0),  # Angled towards scene
                     color=(0.95, 0.95, 1.0),
                 ),
             ]
-            
+
         elif args.lighting_preset == "studio":
             # Studio – simplified with fewer but stronger lights
             scenario.lights = [
                 # Main key light (stronger intensity to compensate for fewer lights)
                 DiskLightCfg(
-                    intensity=4000.0,       # Higher intensity since we have fewer lights
-                    radius=1.8,             # Larger for softer, more even coverage
+                    intensity=4000.0,  # Higher intensity since we have fewer lights
+                    radius=1.8,  # Larger for softer, more even coverage
                     pos=(3.0, 2.0, 3.2),
                     rot=(0.8660, 0.0, 0.5, 0.0),
                     color=(1.0, 0.98, 0.96),
                 ),
                 # Fill light (increased to balance the key light)
                 DiskLightCfg(
-                    intensity=1800.0,       # Increased to provide better fill
-                    radius=1.8,             # Larger for soft, diffuse fill
+                    intensity=1800.0,  # Increased to provide better fill
+                    radius=1.8,  # Larger for soft, diffuse fill
                     pos=(-2.2, 1.2, 2.6),
                     rot=(0.7071, 0.0, -0.7071, 0.0),
                     color=(0.96, 0.97, 1.0),
                 ),
                 # Ambient light (higher to compensate for fewer lights)
                 DomeLightCfg(
-                    intensity=300.0,        # Increased ambient for overall brightness
+                    intensity=300.0,  # Increased ambient for overall brightness
                     color=(0.95, 0.95, 0.95),
                 ),
             ]
@@ -123,15 +118,15 @@ if __name__ == "__main__":
         if args.sim in ["isaacsim"]:
             scenario.render = RenderCfg(mode="pathtracing")  # Best quality for complex lighting
             log.info("Using pathtracing render mode for optimal lighting quality")
-        
+
     else:
         log.info("Using default lighting configuration")
 
     # add cameras
     scenario.cameras = [
         PinholeCameraCfg(
-            width=1024, 
-            height=1024, 
+            width=1024,
+            height=1024,
             pos=[4.0, 4.0, 3.0],
             look_at=[0.0, 0.0, 1.0],
         )
