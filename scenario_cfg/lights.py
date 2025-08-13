@@ -103,6 +103,3 @@ class DiskLightCfg(BaseLightCfg):
     """Orientation of the disk. Default is (1.0, 0.0, 0.0, 0.0) (pointing down)."""
     normalize: bool = True
     """Whether to normalize the light intensity based on the disk area."""
-
-
-
